@@ -1,0 +1,4 @@
+!examples/
+!fails/
+__pycache__/
+*.png

@@ -1,20 +1,11 @@
-import time
-import cv2
 import numpy as np
 from scipy.fft import fft2, ifft2, ifftshift
-from scipy.ndimage import gaussian_filter
-from scipy.optimize import minimize
 from scipy.signal import convolve2d
-
-def open_image(image_path: str) -> np.ndarray:
-    """Returns image as NumPy Array 64-bit float with 3 channels (RGB)"""
-    image_cv = cv2.imread(image_path, flags=cv2.IMREAD_COLOR)
-    return np.array(image_cv, np.float64)
 
 def psf2otf(psf, sz):
     """
-    Compute the FFT of the Point Spread Function (PSF) and circularly shift
-    it to ensure the central pixel is at (1, 1) position.
+    Compute the FFT of the Point Spread Function (PSF) and pad/crop it so
+    it has the shape specified by sz.
 
     Parameters:
     - psf: 2D array, the Point Spread Function.
@@ -23,10 +14,7 @@ def psf2otf(psf, sz):
     Returns:
     - otf: 2D array, the Optical Transfer Function.
     """
-    # Ensure psf is 2D array
     psf = np.atleast_2d(psf)
-
-    # Get the size of the PSF
     psf_sz = psf.shape
 
     # Pad PSF with zeros to match specified dimensions (sz)
@@ -36,9 +24,7 @@ def psf2otf(psf, sz):
     shift_amnt = ((sz[0] - psf_sz[0])//2, (sz[1] - psf_sz[1])//2)
     psf_shifted = np.roll(psf_padded, shift=shift_amnt, axis=(0, 1))
 
-    # Compute the FFT of the PSF
     otf = fft2(ifftshift(psf_shifted))
-
     return otf
 
 
@@ -52,54 +38,64 @@ def convolve_in_frequency_domain(image, psf):
 
     Returns:
     - convolved_image: 3D array, the convolved image with shape (height, width, channels).
+
+    NOTE:
+    Will add option for padding in the future. The problem with padding is that
+    you can't simply deconvolve the image with the same kernel and restore it
     """
-    # Ensure psf is 2D array
     psf = np.atleast_2d(psf)
-
-    # Get the number of channels
     num_channels = image.shape[2]
-
-    # Initialize the convolved image
     convolved_image = np.zeros_like(image, dtype=np.complex128)
-
-    # TODO: make it so padding is not an arbritrary value
-    pad = 10
-    otf_shape = (image.shape[0]+2*pad, image.shape[1]+2*pad)
+    otf_shape = (image.shape[0], image.shape[1])
     otf = psf2otf(psf, otf_shape)
-
-    padded_image = np.pad(image, ((pad, pad), (pad, pad), (0, 0)), 'symmetric')
 
     # Perform convolution in the frequency domain for each channel
     for channel in range(num_channels):
-        # Apply Fourier Transform to the image and PSF
-        image_fft = fft2(padded_image[:, :, channel])
-
-        # Convolve in the frequency domain
+        image_fft = fft2(image[:, :, channel])
         result_fft = image_fft * otf
-
-        # Apply Inverse Fourier Transform and shift back
-        convolved_image[:, :, channel] = np.real(ifft2(result_fft))[pad:-pad, pad:-pad]
+        convolved_image[:, :, channel] = np.real(ifft2(result_fft))
     
     return convolved_image
 
 def convolve_in_spatial_domain(image, kernel):
-    result = np.zeros_like(image)
+    """
+    Convolve a 3-channel image with a kernel in the spatial domain.
+
+    Parameters:
+    - image: 3D array, the input image with shape (height, width, channels)
+    - kernel: 2D array, the kernel or PSF
+
+    Returns:
+    - convolved_image: 3D array, the convolved image with same orginal shape
+    """
+    convolved_image = np.zeros_like(image)
     for v in range(image.shape[2]):
-        result[:, :, v] = convolve2d(image[:, :, v], kernel, mode='same', boundary='symm')
-    return result
+        convolved_image[:, :, v] = convolve2d(image[:, :, v], kernel, mode='same', boundary='symm')
+    return convolved_image
 
-def kernel_from_image(image_path: str, shape) -> np.ndarray:
-    image_cv = cv2.imread(image_path, flags=cv2.IMREAD_GRAYSCALE)
-    kernel = np.array(image_cv)
-    kernel = kernel / np.sum(kernel)
-    return kernel
+def deconvolve(image, psf):
+    """
+    Deconvolve a 3-channel image with a point spread function (PSF)
 
+    Parameters:
+    - image: 3D array, the input image with shape (height, width, channels).
+    - psf: 2D array, the point spread function.
 
-image_path = "examples/picassoOut.png"
-kernel_path = "examples/picassoBlurImage_kernel.png"
+    Returns:
+    - deconvolved_image: 3D array, the deconvolved image with shape (height, width, channels).
 
-image = open_image(image_path)
-kernel = kernel_from_image(kernel_path, image.shape[:2])
+    NOTE:
+    See `convolve_in_frequency_domain` for notes about padding
+    """
+    num_channels = image.shape[2]
+    deconvolved_image = np.zeros_like(image, dtype=np.complex128)
+    otf_shape = (image.shape[0], image.shape[1])
+    otf = psf2otf(psf, otf_shape)
 
-c_image = convolve_in_frequency_domain(image, kernel)
-cv2.imwrite("convolvefftpadded.png", c_image.astype(np.uint8))
+    # Perform deconvolution in the frequency domain for each channel
+    for channel in range(num_channels):
+        image_fft = fft2(image[:, :, channel])
+        result_fft = image_fft / otf
+        deconvolved_image[:, :, channel] = np.real(ifft2(result_fft))
+    
+    return deconvolved_image
