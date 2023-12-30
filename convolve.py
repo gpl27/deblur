@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.fft import fft2, ifft2, ifftshift
+from scipy.fft import fft2, ifft2, ifftshift, fftshift
 from scipy.signal import convolve2d
 
 def psf2otf(psf, sz):
@@ -13,18 +13,23 @@ def psf2otf(psf, sz):
 
     Returns:
     - otf: 2D array, the Optical Transfer Function.
+
+    TODO:
+    Add case when psf is bigger than the image
     """
     psf = np.atleast_2d(psf)
     psf_sz = psf.shape
 
     # Pad PSF with zeros to match specified dimensions (sz)
-    psf_padded = np.pad(psf, [(0, sz[0] - psf_sz[0]), (0, sz[1] - psf_sz[1])], mode='constant')
+    diffx = sz[0] - psf_sz[0]
+    diffy = sz[1] - psf_sz[1]
+    diffx2 = diffx // 2
+    diffy2 = diffy // 2
+    restx = diffx % 2
+    resty = diffy % 2
+    psf_padded = np.pad(psf, [(diffx2, diffx2+restx), (diffy2, diffy2+resty)], mode='constant')    
 
-    # Circularly shift PSF so that the central pixel is at (1, 1) position
-    shift_amnt = ((sz[0] - psf_sz[0])//2, (sz[1] - psf_sz[1])//2)
-    psf_shifted = np.roll(psf_padded, shift=shift_amnt, axis=(0, 1))
-
-    otf = fft2(ifftshift(psf_shifted))
+    otf = fft2(fftshift(psf_padded))
     return otf
 
 
