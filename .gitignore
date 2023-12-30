@@ -1,4 +1,4 @@
-!examples/
-!fails/
 __pycache__/
 *.png
+!fails/*.png
+!examples/*.png
