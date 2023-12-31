@@ -1,6 +1,48 @@
+import cv2
 import numpy as np
 from scipy.fft import fft2, ifft2, ifftshift, fftshift
 from scipy.signal import convolve2d
+
+
+def create_line_psf(theta, scale, sz):
+    """
+    Create a Point Spread Function (PSF) in the form of a straight line.
+
+    Parameters:
+    - theta: angle of the line in radians
+    - scale: float, in the interval [0, 1]
+    - sz: tuple, the desired size of the PSF
+
+    Returns:
+    - psf: 2D array, the PSF
+
+    TODO:
+    - remove division by zero
+    """
+    psf = np.zeros(sz)
+    X = sz[1] // 2
+    Y = sz[0] // 2
+    theta = theta % np.pi
+
+    # Calcular os pontos de intersecao
+    if theta <= np.pi/2:
+        p1 = (min(Y/np.tan(theta), X), min(X*np.tan(theta), Y))
+    else:
+        p1 = (max(Y/np.tan(theta), -X), min(-X*np.tan(theta), Y))
+
+    # Calcular os pontos escalados
+    p1 = (int(p1[0]*scale), int(p1[1]*scale))
+    p2 = (-p1[0], -p1[1])
+
+    # Mudanca de coordenada
+    p1 = (p1[0]+X, -p1[1]+Y)
+    p2 = (p2[0]+X, -p2[1]+Y)
+
+    thickness = int(np.mean(sz) * 0.005)
+    thickness = 1 if thickness < 1 else thickness
+    psf = cv2.line(psf, p2, p1, color=255, thickness=thickness, lineType=cv2.LINE_AA)
+    return psf
+
 
 def psf2otf(psf, sz):
     """
@@ -20,16 +62,17 @@ def psf2otf(psf, sz):
     psf = np.atleast_2d(psf)
     psf_sz = psf.shape
 
-    # Pad PSF with zeros to match specified dimensions (sz)
-    diffx = sz[0] - psf_sz[0]
-    diffy = sz[1] - psf_sz[1]
-    diffx2 = diffx // 2
-    diffy2 = diffy // 2
-    restx = diffx % 2
-    resty = diffy % 2
-    psf_padded = np.pad(psf, [(diffx2, diffx2+restx), (diffy2, diffy2+resty)], mode='constant')    
+    if psf_sz != sz:
+        # Pad PSF with zeros to match specified dimensions (sz)
+        diffx = sz[0] - psf_sz[0]
+        diffy = sz[1] - psf_sz[1]
+        diffx2 = diffx // 2
+        diffy2 = diffy // 2
+        restx = diffx % 2
+        resty = diffy % 2
+        psf = np.pad(psf, [(diffx2, diffx2+restx), (diffy2, diffy2+resty)], mode='constant')    
 
-    otf = fft2(fftshift(psf_padded))
+    otf = fft2(fftshift(psf))
     return otf
 
 
