@@ -24,23 +24,24 @@ def create_line_psf(theta, scale, sz):
     Y = sz[0] // 2
     theta = theta % np.pi
 
-    # Calcular os pontos de intersecao
+    # Calculate intersection points
     if theta <= np.pi/2:
         p1 = (min(Y/np.tan(theta), X), min(X*np.tan(theta), Y))
     else:
         p1 = (max(Y/np.tan(theta), -X), min(-X*np.tan(theta), Y))
 
-    # Calcular os pontos escalados
+    # Calculate scaled points
     p1 = (int(p1[0]*scale), int(p1[1]*scale))
     p2 = (-p1[0], -p1[1])
 
-    # Mudanca de coordenada
+    # Change coordinate system
     p1 = (p1[0]+X, -p1[1]+Y)
     p2 = (p2[0]+X, -p2[1]+Y)
 
-    thickness = int(np.mean(sz) * 0.005)
-    thickness = 1 if thickness < 1 else thickness
-    psf = cv2.line(psf, p2, p1, color=255, thickness=thickness, lineType=cv2.LINE_AA)
+    # Draw line
+    psf = cv2.line(psf, p2, p1, color=1, thickness=1, lineType=cv2.LINE_AA)
+    # Normalize
+    psf = psf / np.sum(psf)
     return psf
 
 
