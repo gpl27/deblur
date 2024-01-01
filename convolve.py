@@ -56,22 +56,28 @@ def psf2otf(psf, sz):
 
     Returns:
     - otf: 2D array, the Optical Transfer Function.
-
-    TODO:
-    Add case when psf is bigger than the image
     """
     psf = np.atleast_2d(psf)
     psf_sz = psf.shape
 
-    if psf_sz != sz:
-        # Pad PSF with zeros to match specified dimensions (sz)
-        diffx = sz[0] - psf_sz[0]
-        diffy = sz[1] - psf_sz[1]
-        diffx2 = diffx // 2
-        diffy2 = diffy // 2
-        restx = diffx % 2
-        resty = diffy % 2
-        psf = np.pad(psf, [(diffx2, diffx2+restx), (diffy2, diffy2+resty)], mode='constant')    
+    # Pad/Crop in x
+    diffx = np.abs(sz[0] - psf_sz[0])
+    diffx2 = diffx // 2
+    restx = diffx % 2
+    if psf_sz[0] > sz[0]:
+        psf = psf[diffx2:-(diffx2+restx), :]
+    elif psf_sz[0] < sz[0]:
+        psf = np.pad(psf, [(diffx2, diffx2+restx), (0, 0)], mode='constant')    
+
+    # Pad/Crop in y
+    diffy = np.abs(sz[1] - psf_sz[1])
+    diffy2 = diffy // 2
+    resty = diffy % 2
+    if psf_sz[1] > sz[1]:
+        psf = psf[:, diffy2:-(diffy2+resty)]
+    elif psf_sz[1] < sz[1]:
+        psf = np.pad(psf, [(0, 0), (diffy2, diffy2+resty)], mode='constant')    
+
 
     otf = fft2(fftshift(psf))
     return otf
