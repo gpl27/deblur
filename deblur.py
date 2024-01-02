@@ -17,22 +17,20 @@ from convolve import psf2otf, create_line_psf, convolve_in_frequency_domain, con
 from helpers import kernel_from_image, write_image, open_image
 
 
-
-
 # Function Phi is an approximation of the logarithmic gradient distribution
 def Phi(x):
     k = 2.7
     a = 6.1e-4
     b = 5.0
     lt = 1.852
-    return np.piecewise(x, [x <= lt, x > lt], [lambda x: -k * np.abs(x), lambda x: -(a * x**2 + b)])
+    return np.piecewise(x, [x < -lt,-lt <= x and x <= lt, x > lt], [lambda x: -(a * x**2 + b), lambda x: -k * np.abs(x), lambda x: -(a * x**2 + b)])
+
 
 # Function E'psi_i,v is used to minimize each element of Psi independently to form a global minimum
 def Epsi(psi, lambda1, lambda2, Mi, gamma, dIi, dLi):
     return lambda1*Phi(np.abs(psi)) + lambda2*Mi*((psi - dIi)**2) + gamma*((psi - dLi)**2)
 
 
-### METHODS ###
 def get_derivatives(matrix):
     """
     Calculates all the derivates from the set theta of the
@@ -54,6 +52,7 @@ def get_derivatives(matrix):
 
     """
     derivatives = {
+        'd0': matrix.copy(),
         'dx': np.gradient(matrix, axis=1),
         'dy': np.gradient(matrix, axis=0),
         'dxx': np.gradient(np.gradient(matrix, axis=1), axis=1),
@@ -62,12 +61,14 @@ def get_derivatives(matrix):
     }
     return derivatives
 
+
 def delta_2D_M(A, B):
     """
     Calculates the the 2-norm of A-B
     """
     delta = np.abs(A - B)
     return np.linalg.norm(delta, ord=2)
+
 
 def computeLocalPrior(I, f, t):
     # Initialize M to be the same size as I
@@ -96,6 +97,7 @@ def save_mask_as_image(mask, output_path):
     mask_image = (mask * 255).astype(np.uint8)
     cv2.imwrite(output_path, mask_image)
 
+
 def updatePsi(Psi, I, L, M, VARS):
     I_d = (np.gradient(I, axis=1), np.gradient(I, axis=0))
     L_d = (np.gradient(L, axis=1), np.gradient(L, axis=0))
@@ -109,6 +111,7 @@ def updatePsi(Psi, I, L, M, VARS):
 
 def W(d):
     d_w = {
+        'd0': 0,
         'dx': 1,
         'dy': 1,
         'dxx': 2,
@@ -132,10 +135,10 @@ def computeL(L, I, f, Psi, VARS):
     CF_dx = np.conjugate(F_dx)
     F_dy = fft2(d['dy'])
     CF_dy = np.conjugate(F_dy)
-    L_nominator = CF_f*fft2(I)*delta + VARS['gamma']*CF_dx*fft2(Psi[0]) + VARS['gamma']*CF_dy*fft2(Psi[1])
-    L_denominator = CF_f*F_f*delta + VARS['gamma']*CF_dx*F_dx + VARS['gamma']*CF_dy*F_dy
+    L_nominator = CF_f*fft2(I)*delta + VARS['gamma']*(CF_dx*fft2(Psi[0])) + VARS['gamma']*(CF_dy*fft2(Psi[1]))
+    L_denominator = CF_f*F_f*delta + VARS['gamma']*(CF_dx*F_dx) + VARS['gamma']*(CF_dy*F_dy)
     L_star = L_nominator / L_denominator
-    L_star = ifft2(L_star).astype(np.float64)
+    L_star = np.real(ifft2(L_star)).astype(np.float64)
     return L_star
 
 
@@ -153,11 +156,11 @@ def test_with_CM():
         'k2': 1.5,
     }
 
-    VARS['lambda1'] /= VARS['k1']**10
-    VARS['lambda2'] /= VARS['k2']**10
+    pad = 20
 
     I = cv2.imread('examples/CM.png', flags=cv2.IMREAD_GRAYSCALE)
     I = np.array(I, np.float64)
+    I = np.pad(I, [(pad, pad), (pad, pad)], mode='symmetric')
     psf = create_line_psf(np.deg2rad(45), 0.5, (27, 27))
     I = np.squeeze(add_gaussian_noise(convolve_in_spatial_domain(I, psf)).astype(np.float64), axis=-1)
     write_image("CMmotion.png", I)
@@ -173,21 +176,19 @@ def test_with_CM():
     save_mask_as_image(M, "CM_lp.png")
 
     # Initialize L with observed image I
-    I = I / np.max(I)
     L = I.copy() # Latent image
 
     iterations = 0
     MAX_ITERATIONS = 15
     VARS['gamma'] = 2
-    Psi = [np.zeros_like(L), np.zeros_like(L)]
+    Psi = [np.gradient(L, axis=1), np.gradient(L, axis=0)]
     # For the time being I am ignoring the deltas
     while iterations < MAX_ITERATIONS:
         s = time.time()
         updatePsi(Psi, I, L, M, VARS)
         L = computeL(L, I, f, Psi, VARS)
         VARS['gamma'] *= 2
-        factor = 255/np.max(L)
-        write_image(f'CM{iterations}.png', (L*factor).astype(np.uint8))
+        write_image(f'CM{iterations}.png', L[pad:-pad, pad:-pad])
         print(f'{iterations}: {time.time() - s}s')
         iterations += 1
 
@@ -201,25 +202,23 @@ def test_with_picasso():
         'k2': 1.5,
     }
 
-    VARS['lambda1'] /= (VARS['k1']**10)
-    VARS['lambda2'] /= (VARS['k2']**10)
+    pad = 50
 
     I = cv2.imread('examples/picassoBlurImage.png', flags=cv2.IMREAD_GRAYSCALE)
     I = np.array(I, np.float64)
+    I = np.pad(I, [(pad, pad), (pad, pad)], mode='edge')
     psf = kernel_from_image('examples/picassoBlurImage_kernel.png')
-
-    # Initialize L with observed image I
-    L = I.copy() # Latent image
     f = psf.copy()
 
     # Compute Omega region with t = 5
     O_THRESHOLD = 5 # Omega Region Threshold
-    stime = time.time()
+    s= time.time()
     M = computeLocalPrior(I, f.shape, O_THRESHOLD)
-    etime = time.time()
-    runtime = etime - stime
-    print(f"computeLocalPrior took {runtime}s")
+    print(f"computeLocalPrior took {time.time() - s}s")
     save_mask_as_image(M, "Picasso_lp.png")
+
+    # Initialize L with observed image I
+    L = I.copy() # Latent image
 
     iterations = 0
     MAX_ITERATIONS = 15
@@ -229,11 +228,10 @@ def test_with_picasso():
     # For the time being I am ignoring the deltas
     while iterations < MAX_ITERATIONS:
         s = time.time()
-        # updatePsi(Psi, I, L, M, VARS)
+        updatePsi(Psi, I, L, M, VARS)
         L = computeL(L, I, f, Psi, VARS)
         VARS['gamma'] *= 2
-        factor = 255/np.max(L)
-        write_image(f'picasso{iterations}.png', (L*factor).astype(np.uint8))
+        write_image(f'picasso{iterations}.png', L[pad:-pad, pad:-pad])
         print(f'{iterations}: {time.time() - s}s')
         iterations += 1
 
