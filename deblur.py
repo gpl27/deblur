@@ -24,7 +24,7 @@ def Phi(x):
     k = 2.7
     a = 6.1e-4
     b = 5.0
-    lt = 12
+    lt = 1.852
     return np.piecewise(x, [x <= lt, x > lt], [lambda x: -k * np.abs(x), lambda x: -(a * x**2 + b)])
 
 # Function E'psi_i,v is used to minimize each element of Psi independently to form a global minimum
@@ -222,7 +222,7 @@ def test_with_picasso():
     save_mask_as_image(M, "Picasso_lp.png")
 
     iterations = 0
-    MAX_ITERATIONS = 10
+    MAX_ITERATIONS = 15
 
     VARS['gamma'] = 2
     Psi = [np.gradient(L, axis=1), np.gradient(L, axis=0)]
@@ -237,4 +237,4 @@ def test_with_picasso():
         print(f'{iterations}: {time.time() - s}s')
         iterations += 1
 
-test_with_CM()
+test_with_picasso()
