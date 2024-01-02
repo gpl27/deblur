@@ -85,10 +85,10 @@ def psf2otf(psf, sz):
 
 def convolve_in_frequency_domain(image, psf):
     """
-    Convolve a 3-channel image with a point spread function (PSF) in the frequency domain.
+    Convolve an image with a point spread function (PSF) in the frequency domain.
 
     Parameters:
-    - image: 3D array, the input image with shape (height, width, channels).
+    - image: 2D/3D array, the input image with shape (height, width, channels).
     - psf: 2D array, the point spread function.
 
     Returns:
@@ -99,6 +99,7 @@ def convolve_in_frequency_domain(image, psf):
     you can't simply deconvolve the image with the same kernel and restore it
     """
     psf = np.atleast_2d(psf)
+    image = np.atleast_3d(image)
     num_channels = image.shape[2]
     convolved_image = np.zeros_like(image, dtype=np.complex128)
     otf_shape = (image.shape[0], image.shape[1])
@@ -123,6 +124,7 @@ def convolve_in_spatial_domain(image, kernel):
     Returns:
     - convolved_image: 3D array, the convolved image with same orginal shape
     """
+    image = np.atleast_3d(image)
     convolved_image = np.zeros_like(image)
     for v in range(image.shape[2]):
         convolved_image[:, :, v] = convolve2d(image[:, :, v], kernel, mode='same', boundary='symm')
@@ -154,3 +156,31 @@ def deconvolve(image, psf):
         deconvolved_image[:, :, channel] = np.real(ifft2(result_fft))
     
     return deconvolved_image
+
+def add_gaussian_noise(image, mean=0, std=1):
+    """
+    Add Gaussian noise to an image.
+
+    Parameters:
+    - image: 2D NumPy array (grayscale) or 3D NumPy array (RGB).
+    - mean: Mean of the Gaussian distribution (default is 0).
+    - std: Standard deviation of the Gaussian distribution (default is 25).
+
+    Returns:
+    - Noisy image with added Gaussian noise.
+    """
+
+    # Generate Gaussian noise with the same shape as the input image
+    noise = np.random.normal(loc=mean, scale=std, size=image.shape)
+
+    # Add the noise to the image
+    noisy_image = image + noise
+
+    # Clip the values to the valid range [0, 255] for uint8 images
+    noisy_image = np.clip(noisy_image, 0, 255)
+
+    # Round to integers if the image is of integer type
+    if np.issubdtype(image.dtype, np.integer):
+        noisy_image = np.round(noisy_image).astype(image.dtype)
+
+    return noisy_image
