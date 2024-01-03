@@ -6,30 +6,19 @@
     * use 64bit double precision for I, L and f
     * see approach for processing boundaries of Liu and Jia [2008]
 """
+from multiprocessing import Pool
 import time
 import cv2
 import numpy as np
 from scipy.fft import fft2, ifft2
 from scipy.ndimage import gaussian_filter
-from scipy.optimize import minimize
+from scipy.optimize import minimize_scalar
+from numba import njit, jit
 
 from convolve import psf2otf, create_line_psf, convolve_in_frequency_domain, convolve_in_spatial_domain, add_gaussian_noise
 from helpers import kernel_from_image, write_image, open_image
 
-
-# Function Phi is an approximation of the logarithmic gradient distribution
-def Phi(x):
-    k = 2.7
-    a = 6.1e-4
-    b = 5.0
-    lt = 1.852
-    return np.piecewise(x, [x < -lt,-lt <= x and x <= lt, x > lt], [lambda x: -(a * x**2 + b), lambda x: -k * np.abs(x), lambda x: -(a * x**2 + b)])
-
-
-# Function E'psi_i,v is used to minimize each element of Psi independently to form a global minimum
-def Epsi(psi, lambda1, lambda2, Mi, gamma, dIi, dLi):
-    return lambda1*Phi(np.abs(psi)) + lambda2*Mi*((psi - dIi)**2) + gamma*((psi - dLi)**2)
-
+THREADS = 16
 
 def get_derivatives(matrix):
     """
@@ -58,6 +47,7 @@ def get_derivatives(matrix):
         'dxx': np.gradient(np.gradient(matrix, axis=1), axis=1),
         'dyy': np.gradient(np.gradient(matrix, axis=0), axis=0),
         'dxy': np.gradient(np.gradient(matrix, axis=1), axis=0),
+        'dyx': np.gradient(np.gradient(matrix, axis=0), axis=1),
     }
     return derivatives
 
@@ -98,15 +88,26 @@ def save_mask_as_image(mask, output_path):
     cv2.imwrite(output_path, mask_image)
 
 
-def updatePsi(Psi, I, L, M, VARS):
-    I_d = (np.gradient(I, axis=1), np.gradient(I, axis=0))
-    L_d = (np.gradient(L, axis=1), np.gradient(L, axis=0))
-    for v, Psi_v in enumerate(Psi):
-        for i in range(Psi_v.shape[0]):
-            for j in range(Psi_v.shape[1]):
-                initial_psi_i_v = Psi_v[i, j]
-                result = minimize(Epsi, initial_psi_i_v, args=(VARS['lambda1'], VARS['lambda2'], M[i, j], VARS['gamma'], I_d[v][i, j], L_d[v][i, j]), method='L-BFGS-B')
-                Psi_v[i, j] = result.x[0]
+@njit
+def updatePsi(Psi, I_d, L_d, M, lambda1, lambda2, gamma):
+    k = 2.7
+    a = 6.1e-4
+    b = 5.0
+    lt = 1.852
+    x = np.zeros(3)
+    nPsi = [np.zeros_like(Psi[0]), np.zeros_like(Psi[1])]
+    for v in range(2):
+        for i in range(Psi[0].shape[0]):
+            for j in range(Psi[0].shape[1]):
+                x1 = (lambda2*M[i, j]*I_d[v][i, j] + gamma*L_d[v][i, j])/(-a*lambda1 + lambda2*M[i, j] + gamma)
+                x[0] = x1 if x1 > lt or x1 < -lt else np.NAN
+                x2 = ((k/2)*lambda1 + lambda2*M[i, j]*I_d[v][i, j] + gamma*L_d[v][i, j])/(lambda2*M[i, j] + gamma)
+                x[1] = x2 if x2 >= -lt and x2 < 0 else np.NAN
+                x3 = ((-k/2)*lambda1 + lambda2*M[i, j]*I_d[v][i, j] + gamma*L_d[v][i, j])/(lambda2*M[i, j] + gamma)
+                x[2] = x3 if x3 >= 0 and x3 <= lt else np.NAN
+                result = np.nanmin(x)
+                nPsi[v][i, j] = result if not np.isnan(result) else L_d[v][i, j]
+    return nPsi
 
 
 def W(d):
@@ -116,7 +117,8 @@ def W(d):
         'dy': 1,
         'dxx': 2,
         'dyy': 2,
-        'dxy': 2
+        'dxy': 2,
+        'dyx': 2
     }
     return np.complex128(50/(2**d_w[d]))
 
@@ -156,11 +158,8 @@ def test_with_CM():
         'k2': 1.5,
     }
 
-    pad = 20
-
     I = cv2.imread('examples/CM.png', flags=cv2.IMREAD_GRAYSCALE)
     I = np.array(I, np.float64)
-    I = np.pad(I, [(pad, pad), (pad, pad)], mode='symmetric')
     psf = create_line_psf(np.deg2rad(45), 0.5, (27, 27))
     I = np.squeeze(add_gaussian_noise(convolve_in_spatial_domain(I, psf)).astype(np.float64), axis=-1)
     write_image("CMmotion.png", I)
@@ -178,6 +177,8 @@ def test_with_CM():
     # Initialize L with observed image I
     L = I.copy() # Latent image
 
+    I_d = np.gradient(I, axis=(1, 0))
+
     iterations = 0
     MAX_ITERATIONS = 15
     VARS['gamma'] = 2
@@ -185,10 +186,11 @@ def test_with_CM():
     # For the time being I am ignoring the deltas
     while iterations < MAX_ITERATIONS:
         s = time.time()
-        updatePsi(Psi, I, L, M, VARS)
+        L_d = np.gradient(L, axis=(1, 0))
+        Psi = updatePsi(Psi, I_d, L_d, M, VARS['lambda1'], VARS['lambda2'], VARS['gamma'])
         L = computeL(L, I, f, Psi, VARS)
         VARS['gamma'] *= 2
-        write_image(f'CM{iterations}.png', L[pad:-pad, pad:-pad])
+        write_image(f'CM{iterations}.png', L)
         print(f'{iterations}: {time.time() - s}s')
         iterations += 1
 
@@ -202,11 +204,8 @@ def test_with_picasso():
         'k2': 1.5,
     }
 
-    pad = 50
-
     I = cv2.imread('examples/picassoBlurImage.png', flags=cv2.IMREAD_GRAYSCALE)
     I = np.array(I, np.float64)
-    I = np.pad(I, [(pad, pad), (pad, pad)], mode='edge')
     psf = kernel_from_image('examples/picassoBlurImage_kernel.png')
     f = psf.copy()
 
@@ -220,6 +219,8 @@ def test_with_picasso():
     # Initialize L with observed image I
     L = I.copy() # Latent image
 
+    I_d = np.gradient(I, axis=(1, 0))
+
     iterations = 0
     MAX_ITERATIONS = 15
 
@@ -228,10 +229,11 @@ def test_with_picasso():
     # For the time being I am ignoring the deltas
     while iterations < MAX_ITERATIONS:
         s = time.time()
-        updatePsi(Psi, I, L, M, VARS)
+        L_d = np.gradient(L, axis=(1, 0))
+        Psi = updatePsi(Psi, I_d, L_d, M, VARS['lambda1'], VARS['lambda2'], VARS['gamma'])
         L = computeL(L, I, f, Psi, VARS)
         VARS['gamma'] *= 2
-        write_image(f'picasso{iterations}.png', L[pad:-pad, pad:-pad])
+        write_image(f'picasso{iterations}.png', L)
         print(f'{iterations}: {time.time() - s}s')
         iterations += 1
 
