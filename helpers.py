@@ -28,7 +28,7 @@ def write_image(image_path: str, image: np.ndarray,transform=None) -> None:
     if transform:
         pass
     if type(image) != np.uint8:
-        image = image.astype(np.uint8)
+        image = np.clip(image, 0, 255).astype(np.uint8)
     cv2.imwrite(image_path, image)
 
 def kernel_from_image(image_path: str) -> np.ndarray:

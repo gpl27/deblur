@@ -6,13 +6,10 @@
     * use 64bit double precision for I, L and f
     * see approach for processing boundaries of Liu and Jia [2008]
 """
-from multiprocessing import Pool
 import time
 import cv2
 import numpy as np
 from scipy.fft import fft2, ifft2
-from scipy.ndimage import gaussian_filter
-from scipy.optimize import minimize_scalar
 from numba import njit, jit
 
 from convolve import psf2otf, create_line_psf, convolve_in_frequency_domain, convolve_in_spatial_domain, add_gaussian_noise
@@ -140,7 +137,7 @@ def computeL(L, I, f, Psi, VARS):
     L_nominator = CF_f*fft2(I)*delta + VARS['gamma']*(CF_dx*fft2(Psi[0])) + VARS['gamma']*(CF_dy*fft2(Psi[1]))
     L_denominator = CF_f*F_f*delta + VARS['gamma']*(CF_dx*F_dx) + VARS['gamma']*(CF_dy*F_dy)
     L_star = L_nominator / L_denominator
-    L_star = np.real(ifft2(L_star)).astype(np.float64)
+    L_star = ifft2(L_star).real.astype(np.float64)
     return L_star
 
 
