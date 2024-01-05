@@ -58,9 +58,10 @@ def delta_2D_M(A, B):
 
 
 def computeLocalPrior(I, f, t):
+    I = np.atleast_3d(I)
     # Initialize M to be the same size as I
-    M = np.zeros_like(I, dtype=np.uint8)
-    std_dev = np.zeros(1)
+    M = np.zeros(I.shape[:2], dtype=np.uint8)
+    std_dev = np.zeros(I.shape[2])
 
     # Iterate through pixels
     for i in range(I.shape[0]):
@@ -201,7 +202,7 @@ def test_with_picasso():
         'k2': 1.5,
     }
 
-    I = cv2.imread('examples/picassoBlurImage.png', flags=cv2.IMREAD_GRAYSCALE)
+    I = cv2.imread('examples/picassoBlurImage.png', flags=cv2.IMREAD_COLOR)
     I = np.array(I, np.float64)
     psf = kernel_from_image('examples/picassoBlurImage_kernel.png')
     f = psf.copy()
@@ -216,19 +217,21 @@ def test_with_picasso():
     # Initialize L with observed image I
     L = I.copy() # Latent image
 
-    I_d = np.gradient(I, axis=(1, 0))
+    I_d = [np.gradient(I[:, :, i], axis=(1, 0)) for i in range(I.shape[2])]
+    print(L[:, :, 0].shape)
 
     iterations = 0
     MAX_ITERATIONS = 15
 
     VARS['gamma'] = 2
-    Psi = [np.gradient(L, axis=1), np.gradient(L, axis=0)]
+    Psi = [[np.gradient(L[:, :, l], axis=1), np.gradient(L[:, :, l], axis=0)] for l in range(L.shape[2])]
     # For the time being I am ignoring the deltas
     while iterations < MAX_ITERATIONS:
         s = time.time()
-        L_d = np.gradient(L, axis=(1, 0))
-        Psi = updatePsi(Psi, I_d, L_d, M, VARS['lambda1'], VARS['lambda2'], VARS['gamma'])
-        L = computeL(L, I, f, Psi, VARS)
+        L_d = [np.gradient(L[:, :, l], axis=(1, 0)) for l in range(L.shape[2])]
+        for i in range(L.shape[2]):
+            Psi[i] = updatePsi(Psi[i], I_d[i], L_d[i], M, VARS['lambda1'], VARS['lambda2'], VARS['gamma'])
+            L[:, :, i] = computeL(L[:, :, i], I[:, :, i], f, Psi[i], VARS)
         VARS['gamma'] *= 2
         write_image(f'picasso{iterations}.png', L)
         print(f'{iterations}: {time.time() - s}s')
