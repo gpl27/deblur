@@ -2,3 +2,4 @@ __pycache__/
 *.png
 !fails/*.png
 !examples/*.png
+!imgs/*.png
