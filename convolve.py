@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from scipy.fft import fft2, ifft2, ifftshift, fftshift
+from scipy.fft import fft2, ifft2, fftshift
 from scipy.signal import convolve2d
 
 
@@ -44,7 +44,6 @@ def create_line_psf(theta, scale, sz):
     psf = psf / np.sum(psf)
     return psf
 
-
 def psf2otf(psf, sz):
     """
     Compute the FFT of the Point Spread Function (PSF) and pad/crop it so
@@ -81,7 +80,6 @@ def psf2otf(psf, sz):
 
     otf = fft2(fftshift(psf))
     return otf
-
 
 def convolve_in_frequency_domain(image, psf):
     """
@@ -164,7 +162,7 @@ def add_gaussian_noise(image, mean=0, std=1):
     Parameters:
     - image: 2D NumPy array (grayscale) or 3D NumPy array (RGB).
     - mean: Mean of the Gaussian distribution (default is 0).
-    - std: Standard deviation of the Gaussian distribution (default is 25).
+    - std: Standard deviation of the Gaussian distribution (default is 1).
 
     Returns:
     - Noisy image with added Gaussian noise.

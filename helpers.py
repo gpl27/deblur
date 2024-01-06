@@ -10,12 +10,12 @@ def open_image(image_path: str) -> np.ndarray:
     - image_path: string containing the path to the image file
 
     Returns:
-    - image: 3D 64bit float array
+    - image: 3D 64bit float array, shape is (height, width, channels)
     """
     image_cv = cv2.imread(image_path, flags=cv2.IMREAD_COLOR)
     return np.array(image_cv, np.float64)
 
-def write_image(image_path: str, image: np.ndarray,transform=None) -> None:
+def write_image(image_path: str, image: np.ndarray, transform=None) -> None:
     """
     Write a NumPy Array as a png image. Will apply transform
     to the array before writing
@@ -46,3 +46,4 @@ def kernel_from_image(image_path: str) -> np.ndarray:
     kernel = np.array(image_cv)
     kernel = kernel / np.sum(kernel)
     return kernel
+    
