@@ -169,8 +169,64 @@ def computeL(L, I, f, Psi, gamma):
     L_star = ifft2(L_star).real.astype(np.float64)
     return L_star
 
-def updatef():
+
+def updatef(L_star, I, f, gamma):
     """
-    TODO
+    Update the blur kernel f.
+
+    Conseguir Af 
+    Conseguir B
+    Otimizacao vira problema dual associado
+    Resolver problema dual com metodo do ponto interno de Newton
     """
-    pass
+
+    return
+
+def init_kernel_sparse(width, height, num_points):
+    kernel = np.zeros((width, height))
+    
+    # make random choices for the sparse points
+    points_x = np.random.randint(0, width, num_points)
+    points_y = np.random.randint(0, height, num_points)
+    
+    # define the sparse points in the kernel
+    for x, y in zip(points_x, points_y):
+        kernel[x, y] = 1.0
+    
+    # normalize before return
+    return kernel / np.sum(kernel)  
+
+def init_sqr_kernel_line(side):
+    kernel = np.zeros((side, side))
+    
+    for i in range(side):
+        kernel[i, i] = 1.0
+    
+    return kernel / np.sum(kernel)
+
+# TODO: this sucks, modify later
+def init_kernel_line_noggers(width, height, orientation_degrees):
+    kernel = np.zeros((width, height))
+    
+    # convert the degrees to radians
+    orientation_radians = np.radians(orientation_degrees)
+    
+    # calculate the direction of the line
+    direction = np.array([np.cos(orientation_radians), np.sin(orientation_radians)])
+    
+    # init a line 
+    center_x, center_y = 0, 0
+    
+    # add values to the line
+    for i in range(min(width, height)):
+        x = int(center_x + i * direction[0])
+        y = int(center_y + i * direction[1])
+        
+        # certifies that line is inside the image
+        x = np.clip(x, 0, width - 1)
+        y = np.clip(y, 0, height - 1)
+        
+        kernel[x, y] = 1.0
+    
+    # normalize before return
+    return kernel / np.sum(kernel)
