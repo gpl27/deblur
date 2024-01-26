@@ -170,15 +170,17 @@ def computeL(L, I, f, Psi, gamma):
     return L_star
 
 
-def updatef(L_star, I, f, gamma):
+def updatef(L, I, f):
     """
     Update the blur kernel f.
+    REMINDER: cuidar com imagens de resolucao alta
 
-    Conseguir Af 
+    Conseguir A(realizar primeira operacao, square circulant matrix?) 
     Conseguir B
     Otimizacao vira problema dual associado
-    Resolver problema dual com metodo do ponto interno de Newton
+    Minimizar problema dual com metodo do ponto interno de Newton
     """
+
 
     return
 
@@ -230,3 +232,33 @@ def init_kernel_line_noggers(width, height, orientation_degrees):
     
     # normalize before return
     return kernel / np.sum(kernel)
+
+def extract_rows_top_sd(L, percentage):
+    """
+    Select rows of L with the largest standard deviations for a specific color channel.
+    TODO: do for all channels
+
+    Parameters:
+    - L: Latent image (matrix).
+    - percentage: Percentage of rows to be selected.
+
+    Returns:
+
+    - selected_L: Latent image containing only the selected rows.
+    """
+    
+    # Extract the specified color channel
+    channel_data = L[:, :, 1]
+    # Calculate the standard deviation along axis 0 (rows) for the specified color channel
+    std_devs = np.std(channel_data, axis=1)
+
+    # Calculate the number of rows to be selected based on the percentage
+    num_rows = min(int(percentage * L.shape[0]), L.shape[0])
+    
+    # Get the indices that would sort the elements in descending order
+    selected_indices = np.argsort(std_devs)[-num_rows:]
+
+    # Extract the selected rows from the latent image
+    selected_L = L[selected_indices, :, :]
+
+    return selected_L
