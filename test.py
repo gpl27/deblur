@@ -1,7 +1,7 @@
 import time
 import numpy as np
 
-from deblur import computeLocalPrior, updatePsi, computeL, save_mask_as_image
+from deblur import computeLocalPrior, updatePsi, computeL, updatef, save_mask_as_image
 from helpers import open_image, write_image, kernel_from_image
 
 
@@ -20,11 +20,11 @@ def test_with_picasso():
     # Initialize Latent image with observed image I
     L = I.copy() 
 
-    # Open the kernel used in the paper
-    f = kernel_from_image('examples/picassoBlurImage_kernel.png')
+    # Open the kernel que criei no pixelart xDDDD
+    f = kernel_from_image('examples/kerneeeeeeeeeeel.png')
 
     # Compute Omega region with t = 5
-    O_THRESHOLD = 5 
+    O_THRESHOLD = 5
     s= time.time()
     M = computeLocalPrior(I, f.shape, O_THRESHOLD)
     print(f"computeLocalPrior took {time.time() - s}s")
@@ -46,6 +46,7 @@ def test_with_picasso():
             L_d = np.gradient(L[:, :, i], axis=(1, 0))
             Psi[i] = updatePsi(I_d[i], L_d, M, VARS['lambda1'], VARS['lambda2'], VARS['gamma'])
             L[:, :, i] = computeL(L[:, :, i], I[:, :, i], f, Psi[i], VARS['gamma'])
+        f = updatef(L, I, f)
         VARS['gamma'] *= 2
         write_image(f'picasso{iterations}.png', L)
         print(f'{iterations}: {time.time() - s}s')

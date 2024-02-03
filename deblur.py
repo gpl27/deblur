@@ -14,9 +14,10 @@ import cv2
 import warnings
 import numpy as np
 from scipy.fft import fft2, ifft2
+from scipy.optimize import lsq_linear
 from numba import njit
 from numba.core.errors import NumbaPendingDeprecationWarning
-from convolve import psf2otf 
+from convolve import psf2otf, toeplitz_transform, matrix_to_vector, vector_to_matrix, expand_matrix, expand_vector, extract_rows_top_sd
 
 
 # Filter Numba deprecation warnings
@@ -169,96 +170,75 @@ def computeL(L, I, f, Psi, gamma):
     L_star = ifft2(L_star).real.astype(np.float64)
     return L_star
 
-
-def updatef(L, I, f):
+def updatef(L, I, f, n_rows=50, k_cut_ratio=1e-5):
     """
-    Update the blur kernel f.
-    REMINDER: cuidar com imagens de resolucao alta
-
-    Conseguir A(realizar primeira operacao, square circulant matrix?) 
-    Conseguir B
-    Otimizacao vira problema dual associado
-    Minimizar problema dual com metodo do ponto interno de Newton
-    """
-
-
-    return
-
-def init_kernel_sparse(width, height, num_points):
-    kernel = np.zeros((width, height))
-    
-    # make random choices for the sparse points
-    points_x = np.random.randint(0, width, num_points)
-    points_y = np.random.randint(0, height, num_points)
-    
-    # define the sparse points in the kernel
-    for x, y in zip(points_x, points_y):
-        kernel[x, y] = 1.0
-    
-    # normalize before return
-    return kernel / np.sum(kernel)  
-
-def init_sqr_kernel_line(side):
-    kernel = np.zeros((side, side))
-    
-    for i in range(side):
-        kernel[i, i] = 1.0
-    
-    return kernel / np.sum(kernel)
-
-# TODO: this sucks, modify later
-def init_kernel_line_noggers(width, height, orientation_degrees):
-    kernel = np.zeros((width, height))
-    
-    # convert the degrees to radians
-    orientation_radians = np.radians(orientation_degrees)
-    
-    # calculate the direction of the line
-    direction = np.array([np.cos(orientation_radians), np.sin(orientation_radians)])
-    
-    # init a line 
-    center_x, center_y = 0, 0
-    
-    # add values to the line
-    for i in range(min(width, height)):
-        x = int(center_x + i * direction[0])
-        y = int(center_y + i * direction[1])
-        
-        # certifies that line is inside the image
-        x = np.clip(x, 0, width - 1)
-        y = np.clip(y, 0, height - 1)
-        
-        kernel[x, y] = 1.0
-    
-    # normalize before return
-    return kernel / np.sum(kernel)
-
-def extract_rows_top_sd(L, percentage):
-    """
-    Select rows of L with the largest standard deviations for a specific color channel.
-    TODO: do for all channels
+    Fix L and I and update the blur kernel f.
 
     Parameters:
-    - L: Latent image (matrix).
-    - percentage: Percentage of rows to be selected.
-
+    - L: 3D array, the latent image with shape (height, width, channels)
+    - I: 3D array, the observed image with shape (height, width, channels)
+    - f: 2D array, the PSF or filter kernel
+    # TODO
     Returns:
-
-    - selected_L: Latent image containing only the selected rows.
+    - optimized_f : 2D array, the updated kernel f with shape (height, width)
     """
+
+    # Derivatives and derivative weights for the Theta calculation
+    dL = get_derivatives(L)
+    dI = get_derivatives(I)
+    d_w = {
+        'd0': 0,
+        'dx': 1,
+        'dy': 1,
+        'dxx': 2,
+        'dyy': 2,
+        'dxy': 2,
+        'dyx': 2
+    }
+
+    # Calculate the theta for I_w
+    I_w = np.zeros(I.shape, np.float64)
+    for key, weight in d_w.items():
+        I_w += dI[key] * weight
+
+    # Calculate the theta for L_w
+    L_w = np.zeros(L.shape, np.float64)
+    for key, weight in d_w.items():
+        L_w += dL[key] * weight 
+
+    # Extract rows (may not be enough space to store the entire matrix in the memory after), TODO: automatize
+    # sel_L_w, sel_I_w = extract_rows_top_sd(L_w, 0.25, I_w)
+    sel_L_w = L_w[n_rows:n_rows+n_rows, :, 0]
+    sel_I_w = I_w[n_rows:n_rows+n_rows, :, 0]
+    # sel_I_w = I_w
+    # sel_L_w = L_w
     
-    # Extract the specified color channel
-    channel_data = L[:, :, 1]
-    # Calculate the standard deviation along axis 0 (rows) for the specified color channel
-    std_devs = np.std(channel_data, axis=1)
+    # Get A transforming the selected latent image into a toeplitz matrix
+    A = toeplitz_transform(sel_L_w, f)
 
-    # Calculate the number of rows to be selected based on the percentage
-    num_rows = min(int(percentage * L.shape[0]), L.shape[0])
-    
-    # Get the indices that would sort the elements in descending order
-    selected_indices = np.argsort(std_devs)[-num_rows:]
+    # Get B
+    B_row_num = sel_L_w.shape[0] + f.shape[0] - 1
+    B_col_num = sel_L_w.shape[1] + f.shape[1] - 1
+    # Expand because of full convolution, TODO: (get mid img?)
+    B = expand_matrix(sel_I_w, (B_row_num, B_col_num))
+    B = matrix_to_vector(B)
 
-    # Extract the selected rows from the latent image
-    selected_L = L[selected_indices, :, :]
+    # Minimize the problem # TODO, TODO, TODO: this is our heart, but is not beating 😔
+    result_l2 = lsq_linear(A, B, method='trf', bounds=(0, np.inf), lsmr_tol=1e-2, verbose=1)
+    if result_l2.success:
+        # Transform into the original shape
+        optimized_f = vector_to_matrix(result_l2.x, f.shape) 
+        # Remove values below the threshold for kernel refinement, TODO: discover golden ratio
+        optimized_f[optimized_f < k_cut_ratio] = 0 
+        # Normalize the kernel so that they sum 1
+        total_sum = np.sum(optimized_f)
+        # Zero division check
+        if total_sum != 0:
+            optimized_f = optimized_f / total_sum 
+        else:
+            optimized_f = optimized_f 
+        return optimized_f
+    else:
+        print("Error minimizing problem.")
+        return
 
-    return selected_L

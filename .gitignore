@@ -1,6 +1,7 @@
 __pycache__/
-.python-versions
+.python-version
 *.png
+*.ipynb
 !fails/*.png
 !examples/*.png
 !imgs/*.png
