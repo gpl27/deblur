@@ -8,7 +8,7 @@ from helpers import open_image, write_image, kernel_from_image
 MAX_ITER = 15
 VARS = {
     'gamma': 2, # First iteration, then double
-    'lambda1': 0.002, # [0.002, 0.5]
+    'lambda1': 0.5, # [0.002, 0.5]
     'k1': 1.1, # [1.1, 1.4]
     'lambda2': 25, # [10, 25]
     'k2': 1.5,
@@ -59,12 +59,12 @@ while iterations < MAX_ITER:
         L = nL.copy()
         nPsi = Psi.copy()
         VARS['gamma'] *= 2
-        write_image(f'picasso{iterations}_{iters}.png', L.copy())
+        # write_image(f'picasso{iterations}_{iters}.png', L.copy())
         print(f'{iters}: {time.time() - s}s')
         iters += 1
     write_image(f'picasso{iterations}.png', L.copy())
     write_image(f'picasso_kernel{iterations}.png', f.copy()*(255/np.max(f)))
-    f = updatef(L, I, f, k_cut_ratio=0)
+    f = updatef(L, I, f, n_rows=265, k_cut_ratio=0)
     VARS['lambda1'] /= VARS['k1']
     VARS['lambda2'] /= VARS['k2']
     iterations += 1

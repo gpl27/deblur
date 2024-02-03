@@ -205,8 +205,8 @@ def updatef(L, I, f, n_rows=50, k_cut_ratio=1e-5):
 
     # Extract rows (may not be enough space to store the entire matrix in the memory after), TODO: automatize
     # sel_L_w, sel_I_w = extract_rows_top_sd(L_w, 0.25, I_w)
-    sel_L_w = L_w[n_rows:n_rows+n_rows, :, 0]
-    sel_I_w = I_w[n_rows:n_rows+n_rows, :, 0]
+    sel_L_w = np.mean(L_w, axis=2)[n_rows:-n_rows, :]
+    sel_I_w = np.mean(I_w, axis=2)[n_rows:-n_rows, :]
     # sel_I_w = I_w
     # sel_L_w = L_w
     
