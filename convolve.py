@@ -40,7 +40,7 @@ def create_line_psf(theta, scale, sz):
     p2 = (p2[0]+X, -p2[1]+Y)
 
     # Draw line
-    psf = cv2.line(psf, p2, p1, color=1, thickness=1, lineType=cv2.LINE_AA)
+    psf = cv2.line(psf, p2, p1, color=1, thickness=1)
     # Normalize
     psf = psf / np.sum(psf)
     return psf

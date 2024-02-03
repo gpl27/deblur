@@ -52,7 +52,7 @@ def computeLocalPrior(I, f, t):
     t for the pixel to be considered in the local prior.
 
     Parameters:
-    - I: 3D array, the input image (observed image) with shape (height, width, channels)
+    - I: 2D array, the input image (observed image) with shape (height, width, channels)
     - f: 2D array, the PSF or filter kernel
     - t: float, threshold for the standard deviation
 
@@ -61,7 +61,7 @@ def computeLocalPrior(I, f, t):
     """
     I = np.atleast_3d(I)
     M = np.zeros(I.shape[:2], dtype=np.uint8)
-    std_dev = np.zeros(I.shape[2])
+    std_dev = np.zeros(1)
 
     # Iterate through pixels
     for i in range(I.shape[0]):
@@ -74,7 +74,7 @@ def computeLocalPrior(I, f, t):
             window = I[top:bottom, left:right]
 
             cv2.meanStdDev(window, None, std_dev)
-            M[i, j] = np.all(std_dev < t)
+            M[i, j] = std_dev[0] < t
     return M
 
 def save_mask_as_image(mask, output_path):
@@ -115,14 +115,11 @@ def updatePsi(I_d, L_d, M, lambda1, lambda2, gamma):
     for v in range(2):
         for i in range(M.shape[0]):
             for j in range(M.shape[1]):
-                x1 = (lambda2*M[i, j]*I_d[v][i, j] + gamma*L_d[v][i, j])/(-a*lambda1 + lambda2*M[i, j] + gamma)
-                x[0] = x1 if x1 > lt or x1 < -lt else np.NAN
-                x2 = ((k/2)*lambda1 + lambda2*M[i, j]*I_d[v][i, j] + gamma*L_d[v][i, j])/(lambda2*M[i, j] + gamma)
-                x[1] = x2 if x2 >= -lt and x2 < 0 else np.NAN
-                x3 = ((-k/2)*lambda1 + lambda2*M[i, j]*I_d[v][i, j] + gamma*L_d[v][i, j])/(lambda2*M[i, j] + gamma)
-                x[2] = x3 if x3 >= 0 and x3 <= lt else np.NAN
-                result = np.nanmin(x)
-                nPsi[v][i, j] = result if not np.isnan(result) else L_d[v][i, j]
+                x[0] = (lambda2*M[i, j]*I_d[v][i, j] + gamma*L_d[v][i, j])/(-a*lambda1 + lambda2*M[i, j] + gamma)
+                x[1] = ((k/2)*lambda1 + lambda2*M[i, j]*I_d[v][i, j] + gamma*L_d[v][i, j])/(lambda2*M[i, j] + gamma)
+                x[2] = ((-k/2)*lambda1 + lambda2*M[i, j]*I_d[v][i, j] + gamma*L_d[v][i, j])/(lambda2*M[i, j] + gamma)
+                result = np.min(x)
+                nPsi[v][i, j] = result 
     return nPsi
 
 def computeL(L, I, f, Psi, gamma):
@@ -224,7 +221,7 @@ def updatef(L, I, f, n_rows=50, k_cut_ratio=1e-5):
     B = matrix_to_vector(B)
 
     # Minimize the problem # TODO, TODO, TODO: this is our heart, but is not beating 😔
-    result_l2 = lsq_linear(A, B, method='trf', bounds=(0, np.inf), lsmr_tol=1e-2, verbose=1)
+    result_l2 = lsq_linear(A, B, method='trf', bounds=(0, np.inf), lsmr_tol=1e-3, verbose=1)
     if result_l2.success:
         # Transform into the original shape
         optimized_f = vector_to_matrix(result_l2.x, f.shape) 
