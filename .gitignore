@@ -5,3 +5,4 @@ __pycache__/
 !fails/*.png
 !examples/*.png
 !imgs/*.png
+!results/

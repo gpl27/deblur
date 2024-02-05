@@ -64,8 +64,8 @@ def create_sparse_psf(num_points, sz):
     points_y = np.random.randint(0, sz[0], num_points)
     
     # define the sparse points in the kernel
-    for x, y in zip(points_x, points_y):
-        psf[x, y] = 1.0
+    for y, x in zip(points_x, points_y):
+        psf[y, x] = 1.0
     
     return psf / np.sum(psf)  
 

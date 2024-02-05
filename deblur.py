@@ -14,10 +14,11 @@ import cv2
 import warnings
 import numpy as np
 from scipy.fft import fft2, ifft2
-from scipy.optimize import lsq_linear
-from numba import njit
+from scipy.optimize import lsq_linear, nnls
+from numba import njit, jit
 from numba.core.errors import NumbaPendingDeprecationWarning
 from convolve import psf2otf, toeplitz_transform, matrix_to_vector, vector_to_matrix, expand_matrix, expand_vector, extract_rows_top_sd
+from helpers import open_image, write_image, kernel_from_image
 
 
 # Filter Numba deprecation warnings
@@ -196,19 +197,21 @@ def updatef(L, I, f, n_rows=50, k_cut_ratio=1e-5):
     # Calculate the theta for I_w
     I_w = np.zeros(I.shape, np.float64)
     for key, weight in d_w.items():
-        I_w += dI[key] * weight
+        I_w += weight * dI[key] 
 
     # Calculate the theta for L_w
     L_w = np.zeros(L.shape, np.float64)
     for key, weight in d_w.items():
-        L_w += dL[key] * weight 
+        L_w += weight * dL[key] 
 
-    # Extract rows (may not be enough space to store the entire matrix in the memory after), TODO: automatize
-    # sel_L_w, sel_I_w = extract_rows_top_sd(L_w, 0.25, I_w)
-    sel_L_w = np.mean(L_w, axis=2)[n_rows:-n_rows, :]
-    sel_I_w = np.mean(I_w, axis=2)[n_rows:-n_rows, :]
-    # sel_I_w = I_w
-    # sel_L_w = L_w
+    write_image(f'results/iw.png', I_w.copy())
+    write_image(f'results/lw.png', L_w.copy())
+
+
+    # Extract a piece of the image (may not be enough space to store the entire matrix in the memory after)
+    # Use de mean of the three channels
+    sel_L_w = np.mean(L_w, axis=2)[n_rows:-n_rows, n_rows:-n_rows]
+    sel_I_w = np.mean(I_w, axis=2)[n_rows:-n_rows, n_rows:-n_rows]
     
     # Get A transforming the selected latent image into a toeplitz matrix
     A = toeplitz_transform(sel_L_w, f)
@@ -216,26 +219,17 @@ def updatef(L, I, f, n_rows=50, k_cut_ratio=1e-5):
     # Get B
     B_row_num = sel_L_w.shape[0] + f.shape[0] - 1
     B_col_num = sel_L_w.shape[1] + f.shape[1] - 1
-    # Expand because of full convolution, TODO: (get mid img?)
     B = expand_matrix(sel_I_w, (B_row_num, B_col_num))
     B = matrix_to_vector(B)
 
-    # Minimize the problem # TODO, TODO, TODO: this is our heart, but is not beating 😔
-    result_l2 = lsq_linear(A, B, method='trf', bounds=(0, np.inf), lsmr_tol=1e-3, verbose=1)
-    if result_l2.success:
-        # Transform into the original shape
-        optimized_f = vector_to_matrix(result_l2.x, f.shape) 
-        # Remove values below the threshold for kernel refinement, TODO: discover golden ratio
-        optimized_f[optimized_f < k_cut_ratio] = 0 
-        # Normalize the kernel so that they sum 1
-        total_sum = np.sum(optimized_f)
-        # Zero division check
-        if total_sum != 0:
-            optimized_f = optimized_f / total_sum 
-        else:
-            optimized_f = optimized_f 
-        return optimized_f
+    # Minimize the problem, obs: this is our heart, but is not beating 😔
+    result_l2 = lsq_linear(A, B, method='trf', bounds=(0, np.inf), lsmr_tol=1e-5, verbose=0)
+    optimized_f = vector_to_matrix(result_l2.x, f.shape) 
+    optimized_f[optimized_f < k_cut_ratio] = 0 
+    total_sum = np.sum(optimized_f)
+    if total_sum != 0:
+        optimized_f = optimized_f / total_sum 
     else:
-        print("Error minimizing problem.")
-        return
-
+        optimized_f = optimized_f 
+    return optimized_f  
+    
