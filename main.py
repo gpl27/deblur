@@ -61,8 +61,8 @@ while iterations < MAX_ITER:
         nPsi = Psi.copy()
         VARS['gamma'] *= 2
         iters += 1
-    write_image(f'results/picasso{iterations}.png', L.copy())
-    write_image(f'results/picasso_kernel{iterations}.png', f.copy()*(255/np.max(f)))
+    write_image(f'picasso{iterations}.png', L.copy())
+    write_image(f'picasso_kernel{iterations}.png', f.copy()*(255/np.max(f)))
     f = updatef(L, I, f, n_rows=n_rows, k_cut_ratio=0)
     tempao_atual = time.time() - s
     tempao += tempao_atual
